@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Moq;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,11 +11,14 @@ namespace UnitTest.Test
     public class CalculatorTest
     {
         //Test Classlarda Constructor;
-        public Calculator calculator { get; set; }
+        public Calculator? calculator { get; set; }
+        Mock<ICalculatorService> myMock  { get; set; }
 
-        public CalculatorTest()
+    public CalculatorTest()
         {
-            calculator =  new Calculator();
+            myMock = new Mock<ICalculatorService>();
+            calculator = new Calculator(myMock.Object);
+            //calculator = new Calculator(new CalculatorService());
         }
 
 
@@ -124,7 +128,7 @@ namespace UnitTest.Test
             //burada expectedTotal beklediğimiz değerdir.
             //aşağıdaki actual data ise gerçek methodun döndürdüğü değerdir.
             //var calculator = new Calculator();
-          var actualData =  calculator.add(a, b);
+          var actualData =  calculator?.add(a, b);
             Assert.Equal(expectedTotal, actualData);
         }
         [Theory]
@@ -132,9 +136,97 @@ namespace UnitTest.Test
         [InlineData(10, 0, 0)]
         public void test_zeroValue_returnTotalValueZero(int a, int b, int expectedTotal)
         {
-            var actualData = calculator.add(a, b);
+            var actualData = calculator?.add(a, b);
             Assert.Equal(expectedTotal, actualData);
+        }
+
+        //Mock ile test etme;
+        [Theory]
+        [InlineData(2, 3, 5)]
+        [InlineData(10, 11, 21)]
+        public void test_simpleValue_returnTotalValue_viaMock(int a, int b, int expectedTotal)
+        {
+          //Methoda ne parametre değerleri gelirse gelsin ben bu methodu taklit ediyorum
+          //ve benim burada belirlediğim değer dönsün
+            myMock.Setup(x => x.add(a, b)).Returns(expectedTotal);
+            var actualData = calculator?.add(a, b);
+            Assert.Equal(expectedTotal, actualData);
+            myMock.Verify(x => x.add(a, b),Times.Once);//bu method 1 defa çalışırsa
+                                                       // test başarılı olur ancak eğer hiç çalışmaz ise ya da birden çok çalışır
+                                                       // ise test başarısız sonuçlanacaktır. 
+
+            //  myMock.Verify(x => x.add(a, b), Times.AtLeast(2));
+            //myMock.Verify(x => x.add(a, b), Times.AtMost(2));
+        }
+        [Theory]
+        [InlineData(2, 3, 6)]
+        public void test_simpleMultipleValue_returnTotalValue_viaMock(int a, int b, int expectedTotal)
+        {
+            myMock.Setup(x => x.multip(a, b)).Returns(expectedTotal);
+            var actualData = calculator?.multip(a, b);
+            Assert.Equal(expectedTotal, actualData);
+        }
+        ///Moq un Throws methodunu kullanalım;
+        [Theory]
+        [InlineData(0, 3)]
+        public void test_zeroMultipleValue_returnTotalValue_viaMockThrows(int a, int b)
+        {
+            myMock.Setup(x => x.multip(a, b)).Throws(new Exception("a=0 olamaz"));
+          Exception exception =  Assert.Throws<Exception>(() => calculator?.multip(a, b));
+            Assert.Equal("a=0 olamaz", exception.Message);
+        }
+        //use callBack and It.IsAny<type>
+        [Theory]
+        [InlineData(2, 3, 6)]
+        public void test_simpleMultipleValue_returnTotalValue_viaMockCallBackAndItIsAny(int a, int b, int expectedTotal)
+        {
+            //myMock.Setup(x => x.multip(a, b)).Returns(expectedTotal);
+            //var actualData = calculator?.multip(a, b);
+            //Assert.Equal(expectedTotal, actualData);
+            //Assert.Equal(expectedTotal, calculator?.multip(3, 4));//Bunun mock setup ı yapılmadığından
+            //hata verecek biz burada bu yapıyı bu şekilde sağlayacağız;
+            int actualMultiple=0;
+            myMock.Setup(x => x.multip(It.IsAny<int>(), It.IsAny<int>()))
+                .Callback<int,int>((x,y)=>actualMultiple= x*y);
+            calculator?.multip(a, b);           
+            Assert.Equal(expectedTotal, actualMultiple);
+            //bu aşağıdakileri inlinaData içerisinde vermeden burada bu şekilde kullanabildik;
+             calculator?.multip(3, 5);
+            Assert.Equal(15, actualMultiple);
         }
     }
 
     }
+//Mock class ya da interfacelerin davranışlarını
+//taklit etmek için kullanılan objelerdir.
+//Dış kaynaktan test edilecek methoda hizmet sağlıyorsak
+//burada dış kaynağa gerçek bir request yapmak yerine unit test lerde mock kullanılır;
+//Amaç;
+//Dış kanak iletişimin alacağı zamanı test methodlarının çalışmasında harcamamak
+//Her yazılmış projede unit test methodları eklenebilir fakat mock her projeye eklenemez.
+//Bir projeye mock kullanımı eklenmesi için;
+//Proje
+//Dependency injection
+//Abstraction
+//yapıları kullanılarak geliştirilmiş olmalı.
+
+
+//Mock lar el ile manuel oluşturulabilir ayrıca
+//Moq Framework ü kullanılarak otomatik oluşturulabilirler
+//unit test projesine manage nugget package den yüklüyoruz Moq(Daniel Cazzulino)
+
+//Moq Framewok ü nünde Xunit te olduğu gibi methodları var ;
+//Verify() methodu bir methodun çalışıp çalışmadığını ve çalıştıysa kaç defa çalıştığını
+//test etmemize olanak tanır.
+
+//Throws() örneğin servisten dönebilecek hataların dönmesini simüle edebiliyoruz
+//durumlara göre dönecek hataların doğru olup olmadığını test etmemize olanak tanır.
+
+//callBack() 
+//simüle edeceğimiz method çalıştığı
+//zaman arka tarafta bir callBack methodu çalıştırabiliriz.
+//extra bir method daha çalıştırmak anlamına geliyor.
+
+//It.IsAny<type>
+//simüle edeceğimiz method sadece int parametresi alırsa çalışsın ya da
+//örneğin string parametresi alırsa şu değerler dönsün diyebiliriz.
